@@ -31,21 +31,21 @@ streamlit run app/dashboard.py        # interactive demo
 | split | model | detection F1 | force R² | force MAE | localization (median) |
 |---|---|---|---|---|---|
 | random | linear | 0.97 | 0.969 | 354 mN | 6.57 mm |
-| random | **MLP** | 0.97 | **0.987** | **223 mN** | **0.81 mm** |
+| random | **MLP** | 0.97 | **0.987** | **228 mN** | **0.88 mm** |
 | spatial-holdout | linear | 0.96 | 0.682 | 915 mN | 17.6 mm |
-| spatial-holdout | MLP | 0.96 | **−2.97** | 2559 mN | 10.2 mm |
+| spatial-holdout | MLP | 0.98 | **−0.40** | 1599 mN | 9.88 mm |
 
-The **spatial-holdout collapse** is a deliberate, honest result: when an entire surface quadrant is never probed, the flexible MLP extrapolates catastrophically while the linear model degrades gracefully. This is *why* calibration must cover the whole sensor — and it motivates the active-learning study below.
+The **spatial-holdout gap** is a deliberate, honest result: when an entire surface quadrant is never probed, the flexible MLP fails to extrapolate to it (negative force R² — worse than predicting the mean), while the linear model degrades more gracefully. This is *why* calibration must cover the whole sensor — and it motivates the active-learning study below.
 
 **Sensor characterization** (auto-generated datasheet):
 
 | metric | value |
 |---|---|
 | sensitivity | 0.096 /N (linearity R² = 0.95) |
-| force resolution (2σ) | 247 mN |
+| force resolution (2σ) | 109 mN |
 | detection floor / saturation | 0.5 N / 7.0 N |
 | hysteresis | 14.0 % FS |
-| repeatability (σ_F) | 124 mN |
+| repeatability (σ_F) | 55 mN |
 
 **Automated calibration** (active vs random sampling): core-set selection picks which probes to execute using only the *commanded* (x, y, force) coordinates — no up-front probing — and only the chosen probes are pressed, so the x-axis is genuine hardware presses. On a realistic *biased* probe pool (clustered locations, force skewed to the saturated regime) it reaches random's final force-RMSE with **70 % fewer samples**; on a uniform pool there is no gain — reported honestly. ![active learning](figures/active_learning.png)
 

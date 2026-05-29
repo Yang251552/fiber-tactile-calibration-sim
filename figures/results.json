@@ -2,11 +2,11 @@
   "characterization": {
     "sensitivity_per_N": 0.09556779052723675,
     "linearity_r2": 0.9490928328661093,
-    "resolution_mN": 246.9997142312334,
+    "resolution_mN": 109.42647444832144,
     "detection_floor_N": 0.5,
     "saturation_onset_N": 7.0,
     "hysteresis_pct_fs": 13.959322399654726,
-    "repeatability_force_std_mN": 123.4998571156167
+    "repeatability_force_std_mN": 54.71323722416072
   },
   "models": {
     "random/linear": {
@@ -24,12 +24,12 @@
       "model": "mlp",
       "n_train": 89580,
       "n_test": 22380,
-      "detection_f1": 0.9652507833297995,
-      "force_mae_N": 0.22313695196465663,
-      "force_rmse_N": 0.29838640943596206,
-      "force_r2": 0.9871689509294047,
-      "loc_err_median_mm": 0.8080679995054912,
-      "loc_err_p90_mm": 4.8402337399137725
+      "detection_f1": 0.9737791566126623,
+      "force_mae_N": 0.22766599010633964,
+      "force_rmse_N": 0.30116542673532865,
+      "force_r2": 0.986928834389498,
+      "loc_err_median_mm": 0.8761127301196043,
+      "loc_err_p90_mm": 4.928732465769874
     },
     "spatial_holdout/linear": {
       "model": "linear",
@@ -46,12 +46,12 @@
       "model": "mlp",
       "n_train": 87540,
       "n_test": 24420,
-      "detection_f1": 0.96316118868291,
-      "force_mae_N": 2.558505210170774,
-      "force_rmse_N": 5.350733182696807,
-      "force_r2": -2.9654681341991975,
-      "loc_err_median_mm": 10.207341316373824,
-      "loc_err_p90_mm": 24.152218420233183
+      "detection_f1": 0.9759838631731557,
+      "force_mae_N": 1.5987890867485028,
+      "force_rmse_N": 3.1744290645229323,
+      "force_r2": -0.3957226539945866,
+      "loc_err_median_mm": 9.877882855271078,
+      "loc_err_p90_mm": 21.211937701783718
     }
   },
   "config_sha": "acb8130d8626",

@@ -60,13 +60,16 @@ def _make_models(kind: str, seed: int):
         det = make_pipeline(StandardScaler(), LogisticRegression(max_iter=2000))
         frc = make_pipeline(StandardScaler(), Ridge(alpha=1.0))
         loc = make_pipeline(StandardScaler(), Ridge(alpha=1.0))
-    else:  # mlp
+    else:  # mlp -- early_stopping: hold out 10%, stop on plateau (fast + less overfit)
         det = make_pipeline(StandardScaler(),
-                            MLPClassifier((128, 64), max_iter=400, random_state=seed))
+                            MLPClassifier((128, 64), max_iter=400, random_state=seed,
+                                          early_stopping=True, n_iter_no_change=8))
         frc = make_pipeline(StandardScaler(),
-                            MLPRegressor((128, 64), max_iter=400, random_state=seed))
+                            MLPRegressor((128, 64), max_iter=400, random_state=seed,
+                                         early_stopping=True, n_iter_no_change=8))
         loc = make_pipeline(StandardScaler(),
-                            MLPRegressor((128, 64), max_iter=400, random_state=seed))
+                            MLPRegressor((128, 64), max_iter=400, random_state=seed,
+                                         early_stopping=True, n_iter_no_change=8))
     return det, frc, loc
 
 
