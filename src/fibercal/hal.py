@@ -75,34 +75,65 @@ class SimRig(TactileRig):
 class ArduinoRig(TactileRig):
     """Real rig over serial: Arduino + FSR(s) + (optional) load cell.
 
-    Protocol (newline-delimited ASCII, matches the sketch in firmware/):
-        host -> board :  "F <target_force_N>\n"   command target force
-        board -> host :  "<force_N> <ch0> <ch1> ...\n"   measured force + channels
+    Protocol (newline-delimited ASCII, matches firmware/fsr_rig/fsr_rig.ino):
+        host -> board :  "F <target_force_N>\n"        command target force
+        board -> host :  "<force_N> <ch0> <ch1> ...\n"  measured force + channels
 
-    This stub documents the contract and connects if a board is present; it
-    raises a clear error otherwise so the sim path stays the default.
+    The number of channels is whatever the board reports (the firmware ships a
+    4-FSR proof of concept; a real fiber sensor would report N). The rest of the
+    pipeline derives channel columns from the data, so it is channel-count
+    agnostic -- a 4-channel real dataset and the 64-channel sim dataset both flow
+    through ml.py / metrics.py unchanged. FSRs do not sense position, so the
+    commanded (x, y) is logged as ground-truth contact location (the operator /
+    stage places the probe there).
     """
 
-    def __init__(self, cfg: Config, port: str = "/dev/ttyACM0", baud: int = 115200):
+    def __init__(self, cfg: Config, port: str = "/dev/ttyACM0", baud: int = 115200,
+                 n_steps: int = 20, settle_steps: int = 5):
         try:
             import serial  # pyserial, optional dependency
         except ImportError as e:  # pragma: no cover
-            raise RuntimeError(
-                "ArduinoRig needs pyserial: pip install pyserial"
-            ) from e
+            raise RuntimeError("ArduinoRig needs pyserial: pip install pyserial") from e
         self._serial = serial
         self.port = port
         self.baud = baud
         self.cfg = cfg
         self.radius = float(cfg["indenter"]["radius_mm"])
+        self.n_steps = n_steps
+        self.settle_steps = settle_steps
         self._conn = None
+        self.n_channels = None       # learned from the first reading
+        self.channel_cols = None
 
     def reset(self) -> None:  # pragma: no cover - requires hardware
         if self._conn is None:
             self._conn = self._serial.Serial(self.port, self.baud, timeout=2)
 
+    def _read_line(self):  # pragma: no cover - requires hardware
+        from .schema import channel_columns
+        raw = self._conn.readline().decode("ascii", "ignore").split()
+        if len(raw) < 2:
+            return None, None
+        force = float(raw[0])
+        channels = np.array([float(v) for v in raw[1:]])
+        if self.n_channels is None:
+            self.n_channels = len(channels)
+            self.channel_cols = channel_columns(self.n_channels)
+        return force, channels
+
     def press(self, x: float, y: float, target_force_N: float):  # pragma: no cover
-        raise NotImplementedError(
-            "Connect an Arduino+FSR rig and implement the serial read loop here. "
-            "The contract is documented in this class' docstring and firmware/."
-        )
+        from .contact import make_state
+        from .schema import PHASE_HOLD, PHASE_RAMP
+        self.reset()
+        self._conn.write(f"F {target_force_N}\n".encode("ascii"))
+        for i in range(self.n_steps):
+            force, channels = self._read_line()
+            if force is None:
+                continue
+            phase = PHASE_HOLD if i >= self.settle_steps else PHASE_RAMP
+            state = make_state(
+                t=i * 0.02, target_force_N=target_force_N, applied_force_N=force,
+                contact_x=x, contact_y=y, phase=phase,
+                indenter_radius_mm=self.radius,
+            )
+            yield state, channels

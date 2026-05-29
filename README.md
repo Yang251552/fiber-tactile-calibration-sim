@@ -47,7 +47,7 @@ The **spatial-holdout collapse** is a deliberate, honest result: when an entire 
 | hysteresis | 14.0 % FS |
 | repeatability (σ_F) | 124 mN |
 
-**Automated calibration** (active vs random sampling): on a realistic *biased* probe pool (clustered locations, force skewed to the saturated regime), core-set coverage selection reaches random's final force-RMSE with **70 % fewer samples**. On a uniform pool there is no gain — reported honestly. ![active learning](figures/active_learning.png)
+**Automated calibration** (active vs random sampling): core-set selection picks which probes to execute using only the *commanded* (x, y, force) coordinates — no up-front probing — and only the chosen probes are pressed, so the x-axis is genuine hardware presses. On a realistic *biased* probe pool (clustered locations, force skewed to the saturated regime) it reaches random's final force-RMSE with **70 % fewer samples**; on a uniform pool there is no gain — reported honestly. ![active learning](figures/active_learning.png)
 
 ---
 
@@ -71,7 +71,11 @@ A single contact `(x, y, force)` becomes 64 channel readings via, in order:
 spatial Gaussian **load-spreading** (width set by the **Hertzian contact patch**, so force *and* indenter radius matter) → **tanh saturation** → channel **crosstalk** → first-order **response lag** → slow **drift** → read **noise** → 12-bit **ADC** quantisation. The ML side never sees these parameters — it must learn the inverse from data alone, so the calibration task is genuine, not circular.
 
 ### Hardware Abstraction Layer (`hal.py`)
-`SimRig` and `ArduinoRig` expose the same `press(x, y, force)` interface. The entire pipeline — logging, ML, characterization — runs unchanged on either, so swapping simulation for a real Arduino + FSR rig is a one-line change.
+`SimRig` and `ArduinoRig` expose the same `press(x, y, force)` interface, and `ArduinoRig` implements the real serial read loop (firmware in [`firmware/`](firmware/)). The entire pipeline — logging, ML, characterization — runs unchanged on either rig and is **channel-count agnostic** (a 4-FSR real rig and the 64-channel sim both flow through `ml.py`/`metrics.py`), so going to hardware is a flag, not a rewrite:
+
+```bash
+python scripts/run_experiment.py --rig arduino --port /dev/ttyACM0
+```
 
 ---
 

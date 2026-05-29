@@ -1,20 +1,22 @@
 """Active-learning automated calibration.
 
-The rig decides WHERE to probe next to calibrate with the fewest samples,
-instead of sweeping a fixed grid. This directly matches the project's
-"automated calibration / high-throughput" goal.
+The rig decides WHICH probes to actually execute so it can calibrate with the
+fewest physical presses, instead of sweeping a fixed grid. This matches the
+project's "automated calibration / high-throughput" goal.
 
-Acquisition: core-set / greedy k-center coverage in the sensor's feature space
-(Sener & Savarese, 2018) -- each step adds the probe farthest from all already-
-selected probes, so the labelled set covers the response manifold with minimal
-redundancy.
+Acquisition: core-set / greedy k-center coverage (Sener & Savarese, 2018) in the
+**command space** (x, y, force) of the candidate probes. Crucially this uses
+ONLY information available *before* probing -- the commanded coordinates -- so
+the decision costs no presses. Only the selected probes are ever executed, so
+the x-axis ("# calibration samples") equals the number of real presses, and the
+"fewer samples" claim is hardware-valid (no hidden up-front probing of the pool).
 
 Honesty note: on a *uniform* candidate pool, random sampling already covers the
 space well and active learning shows little to no gain (verified). The benefit
 appears with a *realistic biased pool* -- a real actuator revisits a few regions
 and dwells in the saturated high-force regime -- where random inherits the bias
 but core-set de-biases by spreading coverage. The headline result is a learning
-curve: test force-RMSE vs number of samples, active vs random selection, on a
+curve: test force-RMSE vs number of executed presses, active vs random, on a
 held-out UNIFORM test set.
 """
 from __future__ import annotations
@@ -29,7 +31,7 @@ from .schema import PHASE_HOLD
 
 
 def _hold_reading(rig: SimRig, x, y, force):
-    """Steady-state (hold-phase) channel vector for one probe."""
+    """Steady-state (hold-phase) channel vector for one probe (one press)."""
     last = None
     for st, ch in rig.press(x, y, force):
         if st.phase == PHASE_HOLD:
@@ -38,11 +40,13 @@ def _hold_reading(rig: SimRig, x, y, force):
 
 
 def _candidate_pool(cfg: Config, rng, n, biased=False):
-    """Pool of (x, y, force) probes. A real actuator rarely offers a perfectly
-    uniform pool: it preferentially revisits a few regions and tends to dwell in
-    the high-force (saturated) regime. With `biased=True` the pool is clustered
-    in space and skewed in force -- the realistic case where coverage-based
-    active selection beats random (which just inherits the bias)."""
+    """Pool of candidate (x, y, force) probe COMMANDS (not yet executed).
+
+    A real actuator rarely offers a perfectly uniform pool: it preferentially
+    revisits a few regions and tends to dwell in the high-force (saturated)
+    regime. With `biased=True` the pool is clustered in space and skewed in
+    force -- the realistic case where coverage-based active selection beats
+    random (which just inherits the bias)."""
     size = float(cfg["surface"]["size_mm"])
     m = float(cfg["surface"]["margin_mm"])
     fmax = float(cfg["sweeps"]["random"]["force_max"])
@@ -59,6 +63,8 @@ def _candidate_pool(cfg: Config, rng, n, biased=False):
 
 
 class _Ensemble:
+    """Bagged MLP regressor (channels -> force)."""
+
     def __init__(self, n_members=4, seed=0):
         self.n = n_members
         self.seed = seed
@@ -80,21 +86,33 @@ class _Ensemble:
         return np.mean([m.predict(Xs) for m in self.members], axis=0)
 
 
-def _collect(rig, probes):
-    X = np.array([_hold_reading(rig, x, y, f) for (x, y, f) in probes])
-    y = probes[:, 2]
-    return X, y
+def _coreset_pick(cmd_norm, chosen, remaining, batch):
+    """Greedy k-center: add points farthest (in normalised command space) from
+    the already-chosen set. Uses only command coordinates -> no probing."""
+    rem = np.array(remaining)
+    Xr = cmd_norm[rem]
+    Xc = cmd_norm[chosen]
+    mind = np.min(np.linalg.norm(Xr[:, None, :] - Xc[None, :, :], axis=2), axis=1)
+    pick = []
+    for _ in range(batch):
+        j = int(np.argmax(mind))
+        pick.append(int(rem[j]))
+        mind = np.minimum(mind, np.linalg.norm(Xr - Xr[j], axis=1))
+        mind[j] = -1.0
+    return pick
 
 
 def run_comparison(cfg: Config, seed=40, n_seed=15, n_total=150,
                    pool_size=600, batch=15):
-    """Active vs random selection. Returns dict with two learning curves."""
+    """Active vs random selection. Returns two learning curves of
+    (n_presses_executed, test_force_RMSE)."""
     rng = np.random.default_rng(seed)
     rig = SimRig(cfg, rng=np.random.default_rng(seed))
 
-    # fixed test set + candidate pool
+    # Fixed held-out UNIFORM test set (simulated evaluation ground truth).
     test_probes = _candidate_pool(cfg, np.random.default_rng(seed + 1), 250)
-    Xte, yte = _collect(rig, test_probes)
+    Xte = np.array([_hold_reading(rig, *p) for p in test_probes])
+    yte = test_probes[:, 2]
 
     def rmse(model):
         return float(np.sqrt(np.mean((model.predict(Xte) - yte) ** 2)))
@@ -102,44 +120,40 @@ def run_comparison(cfg: Config, seed=40, n_seed=15, n_total=150,
     def loop(strategy):
         pool = _candidate_pool(cfg, np.random.default_rng(seed + 2), pool_size,
                                biased=True)
-        Xpool, ypool = _collect(rig, pool)
+        # normalised command-space coords (known before any probing)
+        cmd_norm = (pool - pool.mean(0)) / (pool.std(0) + 1e-9)
+
+        cache: dict[int, np.ndarray] = {}  # only EXECUTED probes get pressed
+
+        def reading(i):
+            if i not in cache:
+                cache[i] = _hold_reading(rig, *pool[i])  # one real press
+            return cache[i]
+
         chosen = list(rng.choice(len(pool), n_seed, replace=False))
         curve = []
         while True:
-            X, y = Xpool[chosen], ypool[chosen]
+            X = np.array([reading(i) for i in chosen])
+            y = pool[chosen, 2]
             ens = _Ensemble(seed=seed)
             ens.fit(X, y)
-            curve.append((len(chosen), rmse(ens)))
+            # x-axis = presses actually executed (== len(chosen) == len(cache))
+            curve.append((len(cache), rmse(ens)))
             if len(chosen) >= n_total:
                 break
             remaining = [i for i in range(len(pool)) if i not in set(chosen)]
             if strategy == "random":
                 pick = list(rng.choice(remaining, batch, replace=False))
-            else:  # active: core-set / greedy k-center coverage in feature space
-                rem = np.array(remaining)
-                Xr = ens.scaler.transform(Xpool[rem])
-                Xc = ens.scaler.transform(Xpool[chosen])
-                # distance of each remaining point to the nearest selected point
-                mind = np.min(np.linalg.norm(Xr[:, None, :] - Xc[None, :, :], axis=2),
-                              axis=1)
-                pick = []
-                for _ in range(batch):
-                    j = int(np.argmax(mind))
-                    pick.append(int(rem[j]))
-                    # update min-distances with the newly added centre
-                    dnew = np.linalg.norm(Xr - Xr[j], axis=1)
-                    mind = np.minimum(mind, dnew)
-                    mind[j] = -1.0  # don't pick again
+            else:  # core-set coverage in command space (no probing to decide)
+                pick = _coreset_pick(cmd_norm, chosen, remaining, batch)
             chosen.extend(pick)
         return np.array(curve)
 
-    active = loop("active")
-    random = loop("random")
-    return {"active": active, "random": random}
+    return {"active": loop("active"), "random": loop("random")}
 
 
 def sample_efficiency(curves: dict) -> dict:
-    """How many fewer samples active needs to hit random's final RMSE."""
+    """How many fewer presses active needs to hit random's final RMSE."""
     rnd = curves["random"]
     act = curves["active"]
     target = rnd[-1, 1]

@@ -36,10 +36,16 @@ def sensitivity(df: pd.DataFrame) -> dict:
 
 
 def repeatability(df: pd.DataFrame, sens_slope: float) -> dict:
-    """Std of response (and equiv. force) across repeats at fixed targets."""
+    """Std of response (and equiv. force) ACROSS repeated presses at a target.
+
+    Repeatability is the spread between independent presses, not the spread of
+    hold samples within one press. So we first collapse each press to its mean
+    hold response, then take the std across the K presses of each repeat target.
+    """
     sub = df[(df["sweep_type"] == "repeat") & (df["phase"] == PHASE_HOLD)].copy()
     sub = sub.assign(resp=peak_response(sub))
-    per = sub.groupby("repeat_id")["resp"].agg(["mean", "std", "count"])
+    press_mean = sub.groupby(["repeat_id", "press_id"])["resp"].mean().reset_index()
+    per = press_mean.groupby("repeat_id")["resp"].agg(["mean", "std", "count"])
     resp_std = float(per["std"].mean())
     force_std = resp_std / sens_slope if sens_slope > 0 else float("nan")
     return {"response_std": resp_std, "force_std_N": force_std, "per_target": per}

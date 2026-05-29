@@ -28,11 +28,21 @@ host  -> board :  "F <target_force_N>\n"
 board -> host  :  "<force_N> <ch0> <ch1> ...\n"   (newline-delimited ASCII, 115200 baud)
 ```
 
+## Channel count: 4 (real) vs 64 (sim)
+The sketch ships a **4-FSR proof of concept**; the simulator models a 64-channel
+fiber array. This mismatch is intentional and harmless: the rig **reports** its
+channel count, `ArduinoRig` learns it from the first reading, and `ml.py` /
+`metrics.py` derive the channel columns from the data — so a 4-channel real
+dataset and the 64-channel sim dataset both flow through the identical pipeline.
+Scale up by adding FSRs (raise `N_CH` in the sketch) or wiring the real fiber
+array's readout. FSRs do not sense position, so the commanded `(x, y)` from the
+stage is logged as the ground-truth contact location.
+
 ## Bringing it online
 1. Flash `fsr_rig/fsr_rig.ino`.
-2. In `fibercal/hal.py`, finish `ArduinoRig.press()` (read the serial line loop)
-   — the contract is fully documented in that class.
-3. Swap `SimRig(cfg)` → `ArduinoRig(cfg, port=...)` in `scripts/run_experiment.py`.
+2. `ArduinoRig.press()` already implements the serial read loop (see `hal.py`).
+3. Run with the real rig:  `python scripts/run_experiment.py --rig arduino --port /dev/ttyACM0`
+   (no code change — the `--rig` flag swaps `SimRig` for `ArduinoRig` via the HAL).
 
 The FSR's real hysteresis and drift then serve as a sanity check on the
 simulator's forward-model assumptions (the sim deliberately includes

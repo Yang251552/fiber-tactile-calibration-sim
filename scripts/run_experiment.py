@@ -16,7 +16,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from fibercal.config import load_config
-from fibercal.hal import SimRig
+from fibercal.hal import ArduinoRig, SimRig
 from fibercal.logger import write_dataset
 from fibercal.rosmimic import Bus, topic_graph
 from fibercal.sweeps import generate_dataset
@@ -26,14 +26,22 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--config", default=None)
     ap.add_argument("--out", default="data/dataset.parquet")
+    ap.add_argument("--rig", choices=["sim", "arduino"], default="sim",
+                    help="sim (default) or a real Arduino+FSR rig over serial")
+    ap.add_argument("--port", default="/dev/ttyACM0", help="serial port for --rig arduino")
     args = ap.parse_args()
 
     root = Path(__file__).resolve().parents[1]
     cfg = load_config(args.config)
     print(f"[config] {cfg.path.name}  sha={cfg.sha}  seed={cfg.seed}")
 
-    rig = SimRig(cfg)
-    print(f"[rig] SimRig  channels={rig.n_channels}")
+    # Same pipeline drives either rig via the HAL.
+    if args.rig == "arduino":
+        rig = ArduinoRig(cfg, port=args.port)
+        print(f"[rig] ArduinoRig  port={args.port} (channels learned from board)")
+    else:
+        rig = SimRig(cfg)
+        print(f"[rig] SimRig  channels={rig.n_channels}")
 
     # ROS-style data flow (declared for the topic graph / architecture diagram).
     bus = Bus()
