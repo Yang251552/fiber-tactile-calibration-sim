@@ -19,6 +19,19 @@ from fibercal.hal import SimRig
 from fibercal.logger import load_dataset
 
 
+def _json_safe(obj):
+    """Recursively replace non-finite floats (NaN/inf) with None so the result
+    is strictly valid JSON (json allows NaN by default; strict parsers reject it)."""
+    import math
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v) for v in obj]
+    if isinstance(obj, float) and not math.isfinite(obj):
+        return None
+    return obj
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--data", default="data/dataset.parquet")
@@ -42,7 +55,11 @@ def main():
     print(f"  force resolution   : {char['resolution']['min_detectable_dF_N']*1000:.1f} mN")
     print(f"  detection floor    : {char['range']['detection_floor_N']:.2f} N")
     print(f"  saturation onset   : {char['range']['saturation_onset_N']:.1f} N")
-    print(f"  hysteresis         : {char['hysteresis']['hysteresis_pct_fs']:.1f} % FS")
+    hyst = char["hysteresis"]
+    hyst_ok = hyst.get("available", True)
+    print(f"  hysteresis         : "
+          + (f"{hyst['hysteresis_pct_fs']:.1f} % FS" if hyst_ok
+             else "n/a (no unload phase in dataset)"))
     print(f"  repeatability σ_F  : {char['repeatability']['force_std_N']*1000:.1f} mN")
 
     # --- inverse models ---
@@ -73,12 +90,15 @@ def main():
         "resolution_mN": char["resolution"]["min_detectable_dF_N"] * 1000,
         "detection_floor_N": char["range"]["detection_floor_N"],
         "saturation_onset_N": char["range"]["saturation_onset_N"],
-        "hysteresis_pct_fs": char["hysteresis"]["hysteresis_pct_fs"],
+        "hysteresis_available": bool(hyst_ok),
+        # null (not NaN) when unavailable -> strictly valid JSON
+        "hysteresis_pct_fs": hyst["hysteresis_pct_fs"] if hyst_ok else None,
         "repeatability_force_std_mN": char["repeatability"]["force_std_N"] * 1000,
     }
-    res_path.write_text(json.dumps(
-        {"characterization": char_summary, "models": summary,
-         "config_sha": cfg.sha, "seed": cfg.seed}, indent=2))
+    payload = _json_safe({"characterization": char_summary, "models": summary,
+                          "config_sha": cfg.sha, "seed": cfg.seed})
+    # allow_nan=False guarantees the file is parseable by strict JSON readers.
+    res_path.write_text(json.dumps(payload, indent=2, allow_nan=False))
     print(f"  wrote {res_path}")
 
 

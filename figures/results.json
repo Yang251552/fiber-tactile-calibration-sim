@@ -5,6 +5,7 @@
     "resolution_mN": 109.42647444832144,
     "detection_floor_N": 0.5,
     "saturation_onset_N": 7.0,
+    "hysteresis_available": true,
     "hysteresis_pct_fs": 13.959322399654726,
     "repeatability_force_std_mN": 54.71323722416072
   },
