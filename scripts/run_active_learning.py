@@ -36,7 +36,8 @@ def main():
 
     fig, ax = plt.subplots(figsize=(6, 4.2))
     ax.plot(curves["random"][:, 0], curves["random"][:, 1], "o-", label="random")
-    ax.plot(curves["active"][:, 0], curves["active"][:, 1], "s-", label="active (uncertainty)")
+    ax.plot(curves["active"][:, 0], curves["active"][:, 1], "s-",
+            label="active (core-set coverage)")
     ax.axhline(eff["target_rmse"], color="gray", ls="--", lw=1,
                label="random final RMSE")
     ax.set_xlabel("# calibration samples")

@@ -88,8 +88,7 @@ class ArduinoRig(TactileRig):
     stage places the probe there).
     """
 
-    def __init__(self, cfg: Config, port: str = "/dev/ttyACM0", baud: int = 115200,
-                 n_steps: int = 20, settle_steps: int = 5):
+    def __init__(self, cfg: Config, port: str = "/dev/ttyACM0", baud: int = 115200):
         try:
             import serial  # pyserial, optional dependency
         except ImportError as e:  # pragma: no cover
@@ -99,8 +98,13 @@ class ArduinoRig(TactileRig):
         self.baud = baud
         self.cfg = cfg
         self.radius = float(cfg["indenter"]["radius_mm"])
-        self.n_steps = n_steps
-        self.settle_steps = settle_steps
+        # Same loading/hold/unloading trajectory as SimRig, so a real press
+        # produces ramp+hold+unload phases -> hysteresis is measurable on hardware.
+        tj = cfg["trajectory"]
+        self.tp = TrajectoryParams(
+            dt=tj["dt"], ramp_steps=tj["ramp_steps"],
+            hold_steps=tj["hold_steps"], unload_steps=tj["unload_steps"],
+        )
         self._conn = None
         self.n_channels = None       # learned from the first reading
         self.channel_cols = None
@@ -123,16 +127,18 @@ class ArduinoRig(TactileRig):
 
     def press(self, x: float, y: float, target_force_N: float):  # pragma: no cover
         from .contact import make_state
-        from .schema import PHASE_HOLD, PHASE_RAMP
         self.reset()
-        self._conn.write(f"F {target_force_N}\n".encode("ascii"))
-        for i in range(self.n_steps):
+        # Drive the full loading -> hold -> unloading setpoint trajectory. The
+        # actuator follows each commanded setpoint; the board reports the
+        # measured force/channels, which we label with the trajectory phase so
+        # the unload (and hence hysteresis) is captured exactly as in sim.
+        for t, f_set, phase in force_trajectory(target_force_N, self.tp):
+            self._conn.write(f"F {f_set}\n".encode("ascii"))
             force, channels = self._read_line()
             if force is None:
                 continue
-            phase = PHASE_HOLD if i >= self.settle_steps else PHASE_RAMP
             state = make_state(
-                t=i * 0.02, target_force_N=target_force_N, applied_force_N=force,
+                t=t, target_force_N=target_force_N, applied_force_N=force,
                 contact_x=x, contact_y=y, phase=phase,
                 indenter_radius_mm=self.radius,
             )

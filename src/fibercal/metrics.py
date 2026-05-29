@@ -89,6 +89,13 @@ def hysteresis(df: pd.DataFrame) -> dict:
     sub = sub.assign(resp=peak_response(sub))
     load = sub[sub["phase"] == PHASE_RAMP]
     unload = sub[sub["phase"] == PHASE_UNLOAD]
+    # Hysteresis needs both loading and unloading. If either is absent (e.g. a
+    # hardware capture that only logged loading), report it as unavailable
+    # rather than silently 0.0 -- a fake "no hysteresis".
+    if load.empty or unload.empty:
+        return {"available": False, "max_gap": float("nan"),
+                "hysteresis_pct_fs": float("nan"), "force_bins": np.array([]),
+                "loading": np.array([]), "unloading": np.array([])}
     bins = np.linspace(0, sub["applied_force_N"].max(), 16)
     centers = 0.5 * (bins[:-1] + bins[1:])
     lo = load.groupby(pd.cut(load["applied_force_N"], bins),
@@ -100,7 +107,7 @@ def hysteresis(df: pd.DataFrame) -> dict:
     valid = ~(np.isnan(lo) | np.isnan(un))
     gap = float(np.max(np.abs(un[valid] - lo[valid]))) if valid.any() else 0.0
     pct = 100.0 * gap / full_scale if full_scale > 0 else 0.0
-    return {"max_gap": float(gap), "hysteresis_pct_fs": float(pct),
+    return {"available": True, "max_gap": float(gap), "hysteresis_pct_fs": float(pct),
             "force_bins": centers, "loading": lo, "unloading": un}
 
 

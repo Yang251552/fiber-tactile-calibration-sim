@@ -67,10 +67,15 @@ def datasheet(char: dict, outdir):
     # hysteresis
     h = char["hysteresis"]
     ax = axs[0, 2]
-    ax.plot(h["force_bins"], h["loading"], "b.-", label="loading")
-    ax.plot(h["force_bins"], h["unloading"], "r.-", label="unloading")
-    ax.set_title(f"Hysteresis = {h['hysteresis_pct_fs']:.1f} % FS")
-    ax.set_xlabel("force (N)"); ax.set_ylabel("response"); ax.legend(fontsize=8)
+    if h.get("available", True):
+        ax.plot(h["force_bins"], h["loading"], "b.-", label="loading")
+        ax.plot(h["force_bins"], h["unloading"], "r.-", label="unloading")
+        ax.set_title(f"Hysteresis = {h['hysteresis_pct_fs']:.1f} % FS")
+        ax.set_xlabel("force (N)"); ax.set_ylabel("response"); ax.legend(fontsize=8)
+    else:
+        ax.axis("off")
+        ax.text(0.5, 0.5, "Hysteresis\n\nn/a\n(no unload phase\nin this dataset)",
+                ha="center", va="center", fontsize=12, transform=ax.transAxes)
 
     # repeatability
     rep = char["repeatability"]
