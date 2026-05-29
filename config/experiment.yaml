@@ -1,0 +1,51 @@
+# Master experiment configuration.
+# Everything that affects the generated dataset lives here so runs are reproducible.
+# A hash of this file is stamped into every dataset.
+
+seed: 42
+
+surface:
+  size_mm: 40.0          # square sensorized patch is size_mm x size_mm
+  taxels_per_side: 8     # 8x8 = 64 fiber channels
+  margin_mm: 2.5         # taxel grid inset from the edge
+
+indenter:
+  radius_mm: 4.0         # hemispherical probe tip radius
+  hertz_k: 2.0           # Hertzian stiffness coeff: F = hertz_k * depth_mm^1.5
+
+# Optical-fiber sensor forward model (force/location -> noisy channel readings).
+sensor:
+  spatial_sigma_mm: 4.0  # base Gaussian load-spreading radius
+  gain: 1.0              # overall channel gain
+  saturation: 6.0        # tanh saturation scale (N-equivalent)
+  crosstalk: 0.04        # off-diagonal mixing between channels
+  noise_std: 0.012       # additive read noise (post-normalisation units)
+  drift_rate: 0.0008     # slow per-channel random-walk drift per step
+  hysteresis: 0.18       # extra gain on unloading -> opens a hysteresis loop
+  lag_alpha: 0.35        # first-order response delay (0 = instant, ->1 = sluggish)
+  adc_bits: 12           # quantisation
+  baseline: 0.05         # dark/no-contact baseline level
+
+# Force-application state machine (one "press" = a full trajectory).
+trajectory:
+  dt: 0.02
+  ramp_steps: 25         # loading
+  hold_steps: 10         # dwell at target
+  unload_steps: 25       # unloading
+
+# Dataset sweeps.
+sweeps:
+  grid:                  # deterministic grid for clean calibration curves
+    locations_per_side: 6
+    force_levels: [0.5, 1.0, 2.0, 4.0, 7.0, 10.0]
+  random:                # randomized pool for ML training (domain randomization)
+    n_samples: 1500
+    force_min: 0.0       # includes sub-threshold / no-contact samples
+    force_max: 10.0
+  ramp:                  # fine loading/unloading ramps for hysteresis
+    locations: [[20.0, 20.0], [12.0, 28.0]]
+    force_max: 10.0
+    n_levels: 30
+  repeat:                # same targets probed K times for repeatability
+    targets: [[20.0, 20.0, 5.0], [10.0, 10.0, 2.0], [30.0, 15.0, 8.0]]
+    k: 30

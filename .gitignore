@@ -1,0 +1,17 @@
+# data artifacts (regenerable)
+data/*.parquet
+data/*.csv
+# keep a small sample if present
+!data/sample.parquet
+
+# python
+__pycache__/
+*.pyc
+.pytest_cache/
+.ipynb_checkpoints/
+*.egg-info/
+.venv/
+venv/
+
+# os
+.DS_Store
